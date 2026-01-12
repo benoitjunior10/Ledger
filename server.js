@@ -103,8 +103,8 @@ app.post('/wallet/recharge', authMiddleware, async (req, res) => {
             throw new Error("Unauthorized: PIN Incorrect pour la recharge");
         }
 
-        // Frais de recharge on 1%
-        const fees = Math.round(amountCents * 0.01); 
+        // Frais de recharge 2%
+        const fees = Math.round(amountCents * 0.02); 
         const totalDebit = amountCents + fees; 
 
         // Verifier Ledger 
@@ -119,6 +119,9 @@ app.post('/wallet/recharge', authMiddleware, async (req, res) => {
         // Créditer Wallet
         await conn.query('UPDATE wallets SET balance = balance + ?, last_activity = NOW() WHERE id = ?', [amountCents, wallet.id]);
 
+        const [updatedWallet] = await conn.query('SELECT balance FROM wallets WHERE id = ?', [wallet.id]);
+        const [updatedLedger] = await conn.query('SELECT balance FROM ledger_accounts WHERE id = "LEDGER_MASTER"');
+
         // Enregistrer Transaction
         const txnId = uuidv4(); // Conformité UUID
         await conn.query(
@@ -131,11 +134,21 @@ app.post('/wallet/recharge', authMiddleware, async (req, res) => {
         res.json({
             success: true,
             data: {
-                id: txnId,
-                type: "wallet_recharge",
-                amount: amount,
-                metadata: { ownerName: `${wallet.first_name} ${wallet.last_name}` },
-                ledgerBalance: (ledger[0].balance - amountCents) / 100
+                walletTransaction: {
+                    id: txnId,
+                    type: "wallet_recharge",
+                    amount: amount,
+                    metadata: { 
+                        ownerName: `${wallet.first_name} ${wallet.last_name}` 
+                    }
+                },
+                ledgerTransaction: {
+                    id: `TXN_LEDGER_${uuidv4().split('-')[0]}`,
+                    type: "ledger_debit",
+                    amount: amount,
+                    newBalance: updatedWallet[0].balance / 100, 
+                    ledgerBalance: updatedLedger[0].balance / 100
+                }
             }
         });
 
